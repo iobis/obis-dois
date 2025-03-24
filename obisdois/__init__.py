@@ -1,6 +1,18 @@
 import requests
 from datetime import datetime
 import os
+import logging
+import csv
+import re
+
+
+pattern = re.compile(r'10\.\S+')
+url_pattern = re.compile(r'^(https?://\S+)$')
+doi_pattern = re.compile(r'^10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+$')
+
+
+def fix_doi(input: str):
+    return input.replace("%2F", "/")
 
 
 class ObisDoi:
@@ -11,6 +23,13 @@ class ObisDoi:
         self.url = None
         self.prefix = "10.25607"
         self.suffix = None
+        self.types = {
+            "ris": "DATA",
+            "bibtex": "misc",
+            "citeproc": "dataset",
+            "schemaOrg": "Dataset",
+            "resourceTypeGeneral": "Dataset"
+        }
         self.creators = [
             {
                 "name": "Ocean Biodiversity Information System (OBIS)",
@@ -25,16 +44,43 @@ class ObisDoi:
         for dataset_id in dataset_ids:
             metadata_record = requests.get(f"https://api.obis.org/dataset/{dataset_id}").json()["results"][0]
             if metadata_record["citation_id"] is not None:
-                self.related_identifiers.append({
-                    "relationType": "HasPart",
-                    "relatedIdentifier": metadata_record["citation_id"],
-                    "relatedIdentifierType": "DOI"
-                })
+                if "doi" in metadata_record["citation_id"] or metadata_record["citation_id"].startswith("10."):
+                    match = pattern.search(metadata_record["citation_id"].strip())
+                    if match:
+                        identifier = match.group()
+                    else:
+                        raise Exception(f"No DOI found in citation identifier: {metadata_record['citation_id']}")
+                    identifier_type = "DOI"
+                elif metadata_record["citation_id"].startswith("http"):
+                    identifier = metadata_record["citation_id"].strip()
+                    identifier_type = "URL"
+                else:
+                    identifier = metadata_record["url"].strip()
+                    identifier_type = "URL"
             else:
-                self.related_identifiers.append({
-                    "relationType": "HasPart",
-                    "relatedIdentifier": metadata_record["url"],
-                    "relatedIdentifierType": "URL"
+                identifier = metadata_record["url"].strip()
+                identifier_type = "URL"
+            
+            if identifier_type == "DOI":
+                identifier = fix_doi(identifier)
+
+            if not bool(url_pattern.match(identifier) or doi_pattern.match(identifier)):
+                raise Exception(f"Invalid identifier for {dataset_id}: {identifier}")
+            
+            self.related_identifiers.append({
+                "relationType": "HasPart",
+                "relatedIdentifier": identifier,
+                "relatedIdentifierType": identifier_type
+            })
+            logging.info(f"Added {dataset_id}: {identifier_type} {identifier}")
+
+    def export_related(self, export_path: str):
+        with open(export_path, "w") as f:
+            writer = csv.DictWriter(f, fieldnames=["related_identifier"], delimiter="\t")
+            writer.writeheader()
+            for related_identifier in self.related_identifiers:
+                writer.writerow({
+                    "related_identifier": related_identifier["relatedIdentifier"]
                 })
 
     def reserve(self):
@@ -43,6 +89,7 @@ class ObisDoi:
                 "attributes": {
                     # "event": "publish",
                     "prefix": self.prefix,
+                    "types": self.types,
                     "doi": f"{self.prefix}/obis.export.{self.suffix}",
                     "creators": self.creators,
                     "titles": [{
