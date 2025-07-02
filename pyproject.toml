@@ -11,4 +11,6 @@ authors = [
 ]
 readme = "README.md"
 requires-python = ">=3.7"
-packages = ["obisdois"]
+
+[tool.setuptools.packages.find]
+where = ["obisdois"]
