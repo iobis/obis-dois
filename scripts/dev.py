@@ -1,10 +1,20 @@
 from obisdois import ObisDoi
 from dotenv import load_dotenv
+import csv
+import logging
 
+
+logging.basicConfig(level=logging.INFO)
+
+
+with open("data/identifiers.csv", "r") as f:
+    reader = csv.DictReader(f)
+    dataset_ids = [row["dataset_id"] for row in list(reader)]
 
 doi = ObisDoi()
-doi.suffix = "aaaaaa"
-doi.title = "OBIS export"
-dataset_ids = ["8b0d5fdd-6a3f-48c7-a4aa-84f39f2df647", "d2df1c14-912e-4f8b-b1aa-2877cc0f4793"]
+doi.suffix = "234a34a8"
+doi.title = "Custom OBIS export on 2023-06-28: The uncharted geographic and ecological niche boundaries of marine fishes."
 doi.set_related(dataset_ids)
+doi.populate()
+doi.export_related("data/datasets.tsv")
 doi.reserve()

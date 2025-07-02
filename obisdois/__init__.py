@@ -21,6 +21,7 @@ class ObisDoi:
         self.title = None
         self.publicationYear = datetime.now().year
         self.url = None
+        self.doi = None
         self.prefix = "10.25607"
         self.suffix = None
         self.types = {
@@ -40,11 +41,13 @@ class ObisDoi:
         self.publisher = "Ocean Biodiversity Information System (OBIS)"
 
     def set_related(self, dataset_ids):
+        """Set related identifiers from dataset IDs. If a citation identifier does not exist, use the dataset URL instead."""
+
         self.related_identifiers = []
         for dataset_id in dataset_ids:
             metadata_record = requests.get(f"https://api.obis.org/dataset/{dataset_id}").json()["results"][0]
             if metadata_record["citation_id"] is not None:
-                if "doi" in metadata_record["citation_id"] or metadata_record["citation_id"].startswith("10."):
+                if ("doi" in metadata_record["citation_id"] and "10." in metadata_record["citation_id"]) or metadata_record["citation_id"].startswith("10."):
                     match = pattern.search(metadata_record["citation_id"].strip())
                     if match:
                         identifier = match.group()
@@ -75,6 +78,8 @@ class ObisDoi:
             logging.info(f"Added {dataset_id}: {identifier_type} {identifier}")
 
     def export_related(self, export_path: str):
+        """Export related identifiers as CSV."""
+
         with open(export_path, "w") as f:
             writer = csv.DictWriter(f, fieldnames=["related_identifier"], delimiter="\t")
             writer.writeheader()
@@ -83,6 +88,12 @@ class ObisDoi:
                     "related_identifier": related_identifier["relatedIdentifier"]
                 })
 
+    def populate(self):
+        """Populate doi and url properties."""
+
+        self.doi = f"{self.prefix}/obis.export.{self.suffix}"
+        self.url = f"https://obis.org/export/{self.suffix}"
+        
     def reserve(self):
         payload = {
             "data": {
@@ -90,14 +101,14 @@ class ObisDoi:
                     # "event": "publish",
                     "prefix": self.prefix,
                     "types": self.types,
-                    "doi": f"{self.prefix}/obis.export.{self.suffix}",
+                    "doi": self.doi,
                     "creators": self.creators,
                     "titles": [{
                         "title": self.title
                     }],
                     "publisher": self.publisher,
                     "publicationYear": datetime.now().year,
-                    "url": f"https://obis.org/export/{self.suffix}",
+                    "url": self.url,
                     "relatedIdentifiers": self.related_identifiers
                 }
             }
@@ -106,5 +117,5 @@ class ObisDoi:
         headers = {
             "Content-Type": "application/vnd.api+json"
         }
-        response = requests.post("https://api.datacite.org/dois", json = payload, headers=headers, auth=(os.getenv("DOI_USER"), os.getenv("DOI_PASSWORD")))
+        response = requests.post("https://api.datacite.org/dois", json=payload, headers=headers, auth=(os.getenv("DOI_USER"), os.getenv("DOI_PASSWORD")))
         return(response.json())
